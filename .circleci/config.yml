@@ -2,42 +2,128 @@ version: 2.1
 
 orbs:
   cloudsmith: cloudsmith/cloudsmith@1.0.4
-  elixir: circleci/elixir@3.1.0 # Re-added as per image
+  elixir: coletiv/elixir@3.1.0  # Corrected orb reference
 
 jobs:
-  create_and_publish_hex_package_job: # This job creates and publishes the package
-    docker: # Corrected executor syntax as per image
-      - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
+  replicate_hex_timeout_job:  # Job to replicate the fetch timeout issue
+    docker:
+      - image: cimg/elixir:1.15.7-otp-26  # Docker image for Elixir, matching your versions
     environment:
-      MIX_ENV: prod # Typically publish with prod environment
-      HEX_HTTP_TIMEOUT: "240"
+      MIX_ENV: test
+      HEX_HTTP_TIMEOUT: "240"  # Increased timeout to mitigate fetch issues
       # CLOUDSMITH_API_KEY, CLOUDSMITH_OWNER, CLOUDSMITH_HEX_REPO_SLUG
       # These must be set in CircleCI Project Environment Variables
     steps:
       - checkout
+      - cloudsmith/ensure-api-key  # Ensures the Cloudsmith API key is available
+      - cloudsmith/install-cli  # Optional, for consistency
       - run:
-          name: "Install Hex & Mix versions"
+          name: "Install JQ (for parsing API response for fingerprint)"
           command: |
+            apk add --no-cache jq  # Using apk since the image is Alpine-based
+      - run:
+          name: "Configure Hex to use Cloudsmith Repository for Fetching"
+          command: |
+            echo "Ensuring Hex and Rebar are installed/updated..."
             mix local.hex --force
             mix local.rebar --force
-      - run:
-          name: "Configure Cloudsmith Hex Mirror"
-          command: |
+
+            echo "Fetching Cloudsmith repository RSA key fingerprint..."
+            CLOUDSMITH_REPO_PATH="${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}"
+            FINGERPRINT_RESPONSE_WITH_CODE=$(curl -s -w "\n%{http_code}" \
+              -H "X-Api-Key: ${CLOUDSMITH_API_KEY}" \
+              "https://api.cloudsmith.io/v1/repos/${CLOUDSMITH_REPO_PATH}/rsa/")
+            HTTP_CODE_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | tail -n1)
+            JSON_BODY_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | sed '$d')
+
+            if [ "$HTTP_CODE_FINGERPRINT" != "200" ]; then
+              echo "Error fetching Cloudsmith RSA key. HTTP Status: $HTTP_CODE_FINGERPRINT"
+              echo "Response: $JSON_BODY_FINGERPRINT"
+              exit 1
+            fi
+            FINGERPRINT=$(echo "$JSON_BODY_FINGERPRINT" | jq -r '.ssh_fingerprint')
+            if [ -z "$FINGERPRINT" ] || [ "$FINGERPRINT" = "null" ]; then
+              echo "Failed to parse fingerprint. Response: $JSON_BODY_FINGERPRINT"
+              exit 1
+            fi
+            echo "Successfully fetched Cloudsmith Fingerprint: SHA256:${FINGERPRINT}"
+
+            # Add Cloudsmith repo with the fetched fingerprint
+            # Replace 'YOUR_SHA_FINGERPRINT_HERE' with the actual SHA code if fetching fails
+            FINGERPRINT_TO_USE=${FINGERPRINT:-"YOUR_SHA_FINGERPRINT_HERE"}
             mix hex.repo add my_cloudsmith_hex_repo \
               "https://hex.cloudsmith.io/${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}/" \
               --auth-key "${CLOUDSMITH_API_KEY}" \
-              --fetch-public-key "SHA256:${FINGERPRINT}" \
+              --fetch-public-key "SHA256:${FINGERPRINT_TO_USE}" \
               --force
-            mix local.rebar --force # Duplicated as per image
+
+            echo "Current Hex repositories:"; mix hex.repo list
+            echo "Hex configuration:"; mix hex.config
+
+      - elixir/install-deps:
+          hex_pm_mirror: false  # Set to false to avoid default Hex mirror, use Cloudsmith
+
       - run:
-          name: "Install Deps"
-          command: mix deps.get
+          name: "Verify Hackney Dependency (if fetch succeeded)"
+          command: |
+            if mix hex.info hackney; then
+              echo "Hackney information retrieved successfully."
+            else
+              echo "Failed to get info for hackney. This might indicate it wasn't fetched."
+              # exit 1 # Uncomment to fail the job if hackney isn't fetched
+            fi
+
+  create_and_publish_hex_package_job:  # Job to create and publish the package
+    docker:
+      - image: cimg/elixir:1.15.7-otp-26
+    environment:
+      MIX_ENV: prod
+      HEX_HTTP_TIMEOUT: "240"
+    steps:
+      - checkout
+      - cloudsmith/ensure-api-key
+      - cloudsmith/install-cli
       - run:
-          name: "Compile Project"
-          command: mix compile
+          name: "Install JQ (for parsing API response for fingerprint)"
+          command: |
+            apk add --no-cache jq
+      - run:
+          name: "Configure Hex for Publishing to Cloudsmith"
+          command: |
+            echo "Ensuring Hex and Rebar are installed/updated..."
+            mix local.hex --force
+            mix local.rebar --force
+
+            echo "Fetching Cloudsmith repository RSA key fingerprint..."
+            CLOUDSMITH_REPO_PATH="${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}"
+            
+            # Add Cloudsmith repo with the fetched fingerprint
+            FINGERPRINT_TO_USE=${FINGERPRINT:-"tp+evxSZS0HnfF7VBSeaMErtJP2R4bleeiWW6QBJ+i4"}
+            mix hex.repo add my_cloudsmith_hex_repo \
+              "https://hex.cloudsmith.io/${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}/" \
+              --auth-key "${CLOUDSMITH_API_KEY}" \
+              --fetch-public-key "SHA256:${FINGERPRINT_TO_USE}" \
+              --force
+
+            echo "Current Hex repositories:"; mix hex.repo list
+            echo "Hex configuration:"; mix hex.config
+
+      - run:
+          name: "Prepare and Build Hex Package"
+          command: |
+            mix deps.get
+            # mix hex.build  # Not necessary as mix hex.publish includes build
+
+      - run:
+          name: "Publish Hex Package to Cloudsmith"
+          command: |
+            mix hex.publish package --yes --repo my_cloudsmith_hex_repo
+            echo "Package publish command executed. Check Cloudsmith UI for package version 0.1.0."
 
 workflows:
-  version: 2 # Workflow version as per image
-  test: # Workflow name as per image
+  replicate_fetch_and_publish_package_workflow:
     jobs:
-      - create_and_publish_hex_package_job
+      - replicate_hex_timeout_job
+      - create_and_publish_hex_package_job:
+          requires:
+            - replicate_hex_timeout_job
