@@ -31,8 +31,7 @@ jobs:
             mix hex.repo add hexrepo \
               "https://hex.cloudsmith.io/${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}/" \
               --auth-key "${CLOUDSMITH_API_KEY}" \
-              --fetch-public-key "SHA256:${FINGERPRINT_TO_USE}" \
-              --force
+              --fetch-public-key "SHA256:${FINGERPRINT_TO_USE}"
 
             # Show current repos and config for debugging
             echo "Hex repos:"; mix hex.repo list
