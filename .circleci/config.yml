@@ -2,14 +2,13 @@ version: 2.1
 
 orbs:
   cloudsmith: cloudsmith/cloudsmith@1.0.4
-  elixir: coletiv/elixir@dev:alpha
-
+  # elixir: circleci/elixir@3.1.0 # Removed as per user request
 
 jobs:
   replicate_hex_timeout_job: # This job focuses on replicating the fetch timeout
     executor:
-      name: elixir/default
-      tag: "1.15.7-erlang-26.2.2-alpine-3.18.4" # Match Elixir version in mix.exs
+      docker:
+        - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
     environment:
       MIX_ENV: test
       HEX_HTTP_TIMEOUT: "240"
@@ -61,9 +60,10 @@ jobs:
             echo "Current Hex repositories:"; mix hex.repo list
             echo "Hex configuration:"; mix hex.config
 
-      # Use the elixir orb's command to install dependencies from project's mix.exs
-      - elixir/install-deps:
-          hex_pm_mirror: false # Test with false, true, or omit as per your original issue
+      # Use mix deps.get instead of elixir/install-deps as elixir orb is removed
+      - run:
+          name: "Install Elixir Dependencies"
+          command: mix deps.get
 
       - run:
           name: "Verify Hackney Dependency (if fetch succeeded)"
@@ -77,8 +77,8 @@ jobs:
 
   create_and_publish_hex_package_job: # This new job creates and publishes the package
     executor:
-      name: elixir/default
-      tag: "1.15.7-erlang-26.2.2-alpine-3.18.4" # Match Elixir version in mix.exs
+      docker:
+        - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
     environment:
       MIX_ENV: prod # Typically publish with prod environment
       HEX_HTTP_TIMEOUT: "240"
