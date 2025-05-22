@@ -1,0 +1,45 @@
+#.circleci/config.yml
+version: 2.1
+
+jobs:
+  install_hex_dependencies:
+    docker:
+      # Use an appropriate Elixir image. Adjust version as needed.
+      - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
+    steps:
+      - checkout # Checkout your project code from your repository
+
+      - run:
+          name: Install Hex if not already present
+          command: mix local.hex --force # Ensures Hex is installed for Mix tasks
+          # Expected Result: Hex package manager is installed. The output will typically show "Hex is installed." or similar confirmation. If already installed, it will confirm it.
+
+      - run:
+          name: Configure Cloudsmith Hex Repository
+          command: |
+            # These variables are sourced from CircleCI Project Settings.
+            export CLOUDSMITH_API_HOST="https://api.cloudsmith.io"
+            export CLOUDSMITH_REPOSITORY="${CLOUDSMITH_OWNER}/${CLOUDSMITH_REPOSITORY_SLUG}"
+
+            # Retrieve the Cloudsmith repository's RSA fingerprint for secure communication
+            FINGERPRINT=$(curl -s -H "X-Api-Key: ${CLOUDSMITH_API_KEY}" ${CLOUDSMITH_API_HOST}/v1/repos/${CLOUDSMITH_REPOSITORY}/rsa/ | jq -r '.ssh_fingerprint')
+            # Expected Result: The FINGERPRINT environment variable is set with the RSA fingerprint. There will be no direct output from this command unless `curl` or `jq` encounter an error.
+
+            # Add the Cloudsmith repository to the Hex client's global configuration
+            mix hex.repo add ${CLOUDSMITH_REPOSITORY_SLUG} https://hex.cloudsmith.io/hex/${CLOUDSMITH_REPOSITORY} --auth-key $CLOUDSMITH_API_KEY --fetch-public-key SHA256:${FINGERPRINT}
+            # Expected Result: The Cloudsmith repository is successfully added to Hex. The output will confirm this, e.g., "Repository 'your-cloudsmith-hex-repo-slug' added.".[1]
+
+            # Increase the HTTP timeout for Hex requests to mitigate potential network issues or large package sizes
+            mix hex.config http_timeout 120
+            # Expected Result: Hex HTTP timeout is set to 120 seconds. The output will confirm the change, e.g., "http_timeout set to 120.".[7, 8]
+
+      - run:
+          name: Get and Compile Mix Dependencies
+          command: mix deps.get # This command fetches and compiles your project's dependencies
+          # Expected Result: Dependencies, including hackney, are fetched and compiled. The output will show progress messages for each dependency being fetched and compiled, e.g., "Getting hackney (Hex package)", followed by successful compilation messages. If successful, the step will pass.
+
+workflows:
+  version: 2
+  build_and_test_pipeline:
+    jobs:
+      - install_hex_dependencies
