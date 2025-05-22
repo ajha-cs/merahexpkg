@@ -11,7 +11,7 @@ defmodule Merahexpkg.MixProject do
       deps: deps(),
       hex: [
         api_url: "https://hex.cloudsmith.io/orgcs/hexrepo",
-        api_key: "28c5d1f81d8dea525e438e2ab75bf6032fd8fa1d"
+        api_key: System.get_env("CLOUDSMITH_API_KEY")
       ],
       package: package()
     ]
@@ -19,7 +19,11 @@ defmodule Merahexpkg.MixProject do
 
   defp deps do
     [
-      {:cowlib, "~> 2.11", only: :prod}
+      {:cowlib, "~> 2.11", only: :prod},
+      {:hackney, "~> 1.23.0"},
+      {:phoenix, "~> 1.7"},
+      {:jason, "~> 1.4"},
+      {:ecto_sql, "~> 3.10"}
     ]
   end
 
