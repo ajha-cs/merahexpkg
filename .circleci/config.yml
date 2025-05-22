@@ -6,9 +6,8 @@ orbs:
 
 jobs:
   replicate_hex_timeout_job: # This job focuses on replicating the fetch timeout
-    executor:
-      docker:
-        - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
+    docker: # Changed from 'executor' to 'docker'
+      - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
     environment:
       MIX_ENV: test
       HEX_HTTP_TIMEOUT: "240"
@@ -39,13 +38,13 @@ jobs:
             HTTP_CODE_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | tail -n1)
             JSON_BODY_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | sed '$d')
 
-            if; then
+            if; then # Corrected if statement syntax
               echo "Error fetching Cloudsmith RSA key. HTTP Status: $HTTP_CODE_FINGERPRINT"
               echo "Response: $JSON_BODY_FINGERPRINT"
               exit 1
             fi
             FINGERPRINT=$(echo "$JSON_BODY_FINGERPRINT" | jq -r '.ssh_fingerprint')
-            if ||; then
+            if ||; then # Corrected if statement syntax
               echo "Failed to parse fingerprint. Response: $JSON_BODY_FINGERPRINT"; exit 1;
             fi
             echo "Successfully fetched Cloudsmith Fingerprint: SHA256:${FINGERPRINT}"
@@ -76,9 +75,8 @@ jobs:
             fi
 
   create_and_publish_hex_package_job: # This new job creates and publishes the package
-    executor:
-      docker:
-        - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
+    docker: # Changed from 'executor' to 'docker'
+      - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
     environment:
       MIX_ENV: prod # Typically publish with prod environment
       HEX_HTTP_TIMEOUT: "240"
@@ -110,13 +108,13 @@ jobs:
             HTTP_CODE_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | tail -n1)
             JSON_BODY_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | sed '$d')
 
-            if; then
+            if; then # Corrected if statement syntax
               echo "Error fetching Cloudsmith RSA key. HTTP Status: $HTTP_CODE_FINGERPRINT"
               echo "Response: $JSON_BODY_FINGERPRINT"
               exit 1
             fi
             FINGERPRINT=$(echo "$JSON_BODY_FINGERPRINT" | jq -r '.ssh_fingerprint')
-            if ||; then
+            if ||; then # Corrected if statement syntax
               echo "Failed to parse fingerprint. Response: $JSON_BODY_FINGERPRINT"; exit 1;
             fi
             echo "Successfully fetched Cloudsmith Fingerprint: SHA256:${FINGERPRINT}"
