@@ -24,12 +24,20 @@ jobs:
             mix local.hex --force
             mix local.rebar --force
 
+
+
             # Replace this with your actual SHA fingerprint
             # FINGERPRINT_TO_USE="tp+evxSZS0HnfF7VBSeaMErtJP2R4bleeiWW6QBJ+i4"
 
             # Add your Cloudsmith repo to Hex
-            mix hex.repo add hexrepo \
-              "https://hex.cloudsmith.io/${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}/" \
+            # mix hex.repo add hexrepo \
+            #   "https://hex.cloudsmith.io/${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}/" \
+            #   --auth-key "${CLOUDSMITH_API_KEY}" \
+            #   --fetch-public-key SHA256:tp+evxSZS0HnfF7VBSeaMErtJP2R4bleeiWW6QBJ+i4
+
+            mix hex.repo remove hexpm || true
+            
+            mix hex.repo add hexrepo https://hex.cloudsmith.io/orgcs/hexrepo \
               --auth-key "${CLOUDSMITH_API_KEY}" \
               --fetch-public-key SHA256:tp+evxSZS0HnfF7VBSeaMErtJP2R4bleeiWW6QBJ+i4
 
