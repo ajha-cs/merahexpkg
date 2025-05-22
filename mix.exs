@@ -19,11 +19,11 @@ defmodule Merahexpkg.MixProject do
 
   defp deps do
     [
-      {:cowlib, "~> 2.11", only: :prod},
-      {:hackney, "~> 1.23.0"},
-      {:phoenix, "~> 1.7"},
-      {:jason, "~> 1.4"},
-      {:ecto_sql, "~> 3.10"}
+      {:cowlib, "~> 2.11", only: :prod, repo: "hexrepo"},
+      {:hackney, "~> 1.23.0", repo: "hexrepo"},
+      {:phoenix, "~> 1.7", repo: "hexrepo"},
+      {:jason, "~> 1.4", repo: "hexrepo"},
+      {:ecto_sql, "~> 3.10", repo: "hexrepo"}
     ]
   end
 

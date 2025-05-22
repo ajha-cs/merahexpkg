@@ -1,45 +1,114 @@
-#.circleci/config.yml
 version: 2.1
 
+orbs:
+  # Orb for general Cloudsmith interactions
+  cloudsmith: cloudsmith/cloudsmith@1.0.4
+  # Orb for Elixir specific tasks
+  elixir: circleci/elixir@3.1.0
+
 jobs:
-  install_hex_dependencies:
-    docker:
-      # Use an appropriate Elixir image. Adjust version as needed.
-      - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
+  replicate_hex_timeout_job:
+    executor:
+      name: elixir/default
+      # Using a common recent Elixir/Erlang version. Adjust if needed.
+      # Check cimg/elixir tags for available combinations [4]
+      tag: "1.15.7-erlang-26.2.2-alpine-3.18.4"
+    environment:
+      # === IMPORTANT: Configure these in CircleCI Project Environment Variables ===
+      # CLOUDSMITH_API_KEY: Your Cloudsmith API Key or Read-Only Entitlement Token
+      # YOUR_CLOUDSMITH_OWNER: Your Cloudsmith organization or username
+      # YOUR_CLOUDSMITH_HEX_REPO_SLUG: The slug of your Cloudsmith Hex repository (e.g., my-hex-cache-repo)
+      # ========================================================================
+      MIX_ENV: test
+      HEX_HTTP_TIMEOUT: "240" # Optional: Increase Hex's internal HTTP timeout [5, 6]
+
     steps:
-      - checkout # Checkout your project code from your repository
+      - checkout
 
-      - run:
-          name: Install Hex if not already present
-          command: mix local.hex --force # Ensures Hex is installed for Mix tasks
-          # Expected Result: Hex package manager is installed. The output will typically show "Hex is installed." or similar confirmation. If already installed, it will confirm it.
+      # Step 1: Cloudsmith Orb - Ensure API key is available
+      # This mirrors the `cloudsmith/ensure-api-key` from your Python example.
+      - cloudsmith/ensure-api-key
 
+      # Step 2: Cloudsmith Orb - Install Cloudsmith CLI (Optional for this Hex fetching scenario)
+      # Mirrors `cloudsmith/install-cli`. Not strictly needed for `mix deps.get`,
+      # but included for structural similarity. Could be used for other Cloudsmith diagnostics.
+      - cloudsmith/install-cli
       - run:
-          name: Configure Cloudsmith Hex Repository
+          name: "Verify Cloudsmith CLI Installation (Optional)"
+          command: cloudsmith --version
+
+      # Step 3: Elixir/Hex Specific Setup - Prepare Mix to use Cloudsmith
+      - run:
+          name: "Install JQ (for parsing API response for fingerprint)"
           command: |
-            # These variables are sourced from CircleCI Project Settings.
-            export CLOUDSMITH_API_HOST="https://api.cloudsmith.io"
-            export CLOUDSMITH_REPOSITORY="${CLOUDSMITH_OWNER}/${CLOUDSMITH_REPOSITORY_SLUG}"
-
-            # Retrieve the Cloudsmith repository's RSA fingerprint for secure communication
-            FINGERPRINT=$(curl -s -H "X-Api-Key: ${CLOUDSMITH_API_KEY}" ${CLOUDSMITH_API_HOST}/v1/repos/${CLOUDSMITH_REPOSITORY}/rsa/ | jq -r '.ssh_fingerprint')
-            # Expected Result: The FINGERPRINT environment variable is set with the RSA fingerprint. There will be no direct output from this command unless `curl` or `jq` encounter an error.
-
-            # Add the Cloudsmith repository to the Hex client's global configuration
-            mix hex.repo add ${CLOUDSMITH_REPOSITORY_SLUG} https://hex.cloudsmith.io/hex/${CLOUDSMITH_REPOSITORY} --auth-key $CLOUDSMITH_API_KEY --fetch-public-key SHA256:${FINGERPRINT}
-            # Expected Result: The Cloudsmith repository is successfully added to Hex. The output will confirm this, e.g., "Repository 'your-cloudsmith-hex-repo-slug' added.".[1]
-
-            # Increase the HTTP timeout for Hex requests to mitigate potential network issues or large package sizes
-            mix hex.config http_timeout 120
-            # Expected Result: Hex HTTP timeout is set to 120 seconds. The output will confirm the change, e.g., "http_timeout set to 120.".[7, 8]
-
+            if command -v apk &> /dev/null; then sudo apk add --no-cache jq;
+            elif command -v apt-get &> /dev/null; then sudo apt-get update && sudo apt-get install -y jq;
+            else echo "Cannot determine package manager to install jq. Ensure jq is available." && exit 1; fi
       - run:
-          name: Get and Compile Mix Dependencies
-          command: mix deps.get # This command fetches and compiles your project's dependencies
-          # Expected Result: Dependencies, including hackney, are fetched and compiled. The output will show progress messages for each dependency being fetched and compiled, e.g., "Getting hackney (Hex package)", followed by successful compilation messages. If successful, the step will pass.
+          name: "Configure Hex to use Cloudsmith Repository"
+          command: |
+            echo "Ensuring Hex and Rebar are installed/updated..."
+            mix local.hex --force # [3]
+            mix local.rebar --force
 
+            echo "Fetching Cloudsmith repository RSA key fingerprint..."
+            # YOUR_CLOUDSMITH_OWNER and YOUR_CLOUDSMITH_HEX_REPO_SLUG must be set as environment variables
+            CLOUDSMITH_REPO_PATH="${YOUR_CLOUDSMITH_OWNER}/${YOUR_CLOUDSMITH_HEX_REPO_SLUG}"
+            
+            # Fetch fingerprint JSON and HTTP status code in one go
+            FINGERPRINT_RESPONSE_WITH_CODE=$(curl -s -w "\\n%{http_code}" \
+              -H "X-Api-Key: ${CLOUDSMITH_API_KEY}" \
+              "https://api.cloudsmith.io/v1/repos/${CLOUDSMITH_REPO_PATH}/rsa/")
+            
+            HTTP_CODE_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | tail -n1)
+            JSON_BODY_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | sed '$d')
+
+            if; then
+              echo "Error fetching Cloudsmith RSA key. HTTP Status: $HTTP_CODE_FINGERPRINT"
+              echo "Response: $JSON_BODY_FINGERPRINT"
+              exit 1
+            fi
+
+            FINGERPRINT=$(echo "$JSON_BODY_FINGERPRINT" | jq -r '.ssh_fingerprint')
+
+            if ||; then
+              echo "Failed to parse fingerprint from Cloudsmith API response."
+              echo "Response body: $JSON_BODY_FINGERPRINT"
+              exit 1
+            fi
+            echo "Successfully fetched Cloudsmith Fingerprint: SHA256:${FINGERPRINT}"
+
+            # Add the Cloudsmith repository to Hex's configuration [3, 7, 8]
+            # The name "my_cloudsmith_hex_repo" matches the `repo:` key in mix.exs.
+            mix hex.repo add my_cloudsmith_hex_repo \
+              "https://hex.cloudsmith.io/${YOUR_CLOUDSMITH_OWNER}/${YOUR_CLOUDSMITH_HEX_REPO_SLUG}/" \
+              --auth-key "${CLOUDSMITH_API_KEY}" \
+              --fetch-public-key "SHA256:${FINGERPRINT}" \
+              --force # --force overwrites if it already exists
+
+            echo "Current Hex repositories:"
+            mix hex.repo list
+            echo "Hex configuration:"
+            mix hex.config
+
+      # Step 4: Fetch Hex Package (Action Step - where timeout is expected)
+      # This uses the elixir orb, consistent with the original problem context.
+      # The `hex_pm_mirror` parameter's effect was part of your original investigation.
+      - elixir/install-deps:
+          hex_pm_mirror: false # Test with false, true, or omit as needed
+
+      # Step 5: Verify Dependency (Confirmation Step)
+      - run:
+          name: "Verify Hackney Dependency (if fetch succeeded)"
+          command: |
+            # This command will fail if hackney was not fetched and configured correctly.
+            if mix hex.info hackney; then
+              echo "Hackney information retrieved successfully."
+            else
+              echo "Failed to get info for hackney. This might indicate it wasn't fetched or there's a config issue."
+              exit 1
+            fi
 workflows:
-  version: 2
-  build_and_test_pipeline:
+  replicate_hex_timeout_workflow:
     jobs:
-      - install_hex_dependencies
+      - replicate_hex_timeout_job
