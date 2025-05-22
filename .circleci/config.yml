@@ -36,7 +36,7 @@ jobs:
             #   --fetch-public-key SHA256:tp+evxSZS0HnfF7VBSeaMErtJP2R4bleeiWW6QBJ+i4
 
             mix hex.repo remove hexpm || true
-            
+
             mix hex.repo add hexrepo https://hex.cloudsmith.io/orgcs/hexrepo \
               --auth-key "${CLOUDSMITH_API_KEY}" \
               --fetch-public-key SHA256:tp+evxSZS0HnfF7VBSeaMErtJP2R4bleeiWW6QBJ+i4
@@ -48,14 +48,6 @@ jobs:
           name: "Fetch Dependencies"
           command: |
             mix deps.get  # Fetch all dependencies, including hackney
-      - run:
-          name: "Check if Hackney Fetched"
-          command: |
-            if mix hex.info hackney; then
-              echo "Hackney fetched successfully!"
-            else
-              echo "Hackney fetch might’ve failed—check the logs."
-            fi
 
 workflows:
   fetch_deps_workflow:
