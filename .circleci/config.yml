@@ -44,7 +44,7 @@ jobs:
             echo "Hex config:"; mix hex.config
       - run:
           name: Confirm Hex registry source
-          command: mix hex.repo list
+          command: HEX_NO_VERIFY_REPO_ORIGIN=1 mix hex.repo list
 
       - run:
           name: "Fetch Dependencies"
