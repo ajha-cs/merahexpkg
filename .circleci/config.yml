@@ -6,7 +6,7 @@ orbs:
 jobs:
   fetch_deps_job:
     docker: # Changed from 'executor' to 'docker'
-      - image: cimg/elixir:1.9  # Elixir 1.15.7 with Erlang 26, Alpine-based
+      - image: cimg/elixir:1.14.0-node  # Elixir 1.15.7 with Erlang 26, Alpine-based
     environment:
       MIX_ENV: test
       HEX_HTTP_TIMEOUT: "240"  # 240 seconds timeout to avoid fetch failures
