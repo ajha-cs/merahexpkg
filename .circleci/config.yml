@@ -2,80 +2,11 @@ version: 2.1
 
 orbs:
   cloudsmith: cloudsmith/cloudsmith@1.0.4
-  # elixir: circleci/elixir@3.1.0 # Removed as per user request
+  elixir: circleci/elixir@3.1.0 # Re-added as per image
 
 jobs:
-  replicate_hex_timeout_job: # This job focuses on replicating the fetch timeout
-    docker: # Changed from 'executor' to 'docker'
-      - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
-    environment:
-      MIX_ENV: test
-      HEX_HTTP_TIMEOUT: "240"
-      # CLOUDSMITH_API_KEY, CLOUDSMITH_OWNER, CLOUDSMITH_HEX_REPO_SLUG
-      # These must be set in CircleCI Project Environment Variables
-    steps:
-      - checkout
-      - cloudsmith/ensure-api-key # [1]
-      - cloudsmith/install-cli # Optional, for consistency
-      - run:
-          name: "Install JQ (for parsing API response for fingerprint)"
-          command: |
-            if command -v apk &> /dev/null; then sudo apk add --no-cache jq;
-            elif command -v apt-get &> /dev/null; then sudo apt-get update && sudo apt-get install -y jq;
-            else echo "Cannot determine package manager to install jq. Ensure jq is available." && exit 1; fi
-      - run:
-          name: "Configure Hex to use Cloudsmith Repository for Fetching"
-          command: |
-            echo "Ensuring Hex and Rebar are installed/updated..."
-            mix local.hex --force # [1]
-            mix local.rebar --force
-
-            echo "Fetching Cloudsmith repository RSA key fingerprint..."
-            CLOUDSMITH_REPO_PATH="${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}"
-            FINGERPRINT_RESPONSE_WITH_CODE=$(curl -s -w "\\n%{http_code}" \
-              -H "X-Api-Key: ${CLOUDSMITH_API_KEY}" \
-              "https://api.cloudsmith.io/v1/repos/${CLOUDSMITH_REPO_PATH}/rsa/")
-            HTTP_CODE_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | tail -n1)
-            JSON_BODY_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | sed '$d')
-
-            if; then # Corrected if statement syntax
-              echo "Error fetching Cloudsmith RSA key. HTTP Status: $HTTP_CODE_FINGERPRINT"
-              echo "Response: $JSON_BODY_FINGERPRINT"
-              exit 1
-            fi
-            FINGERPRINT=$(echo "$JSON_BODY_FINGERPRINT" | jq -r '.ssh_fingerprint')
-            if ||; then # Corrected if statement syntax
-              echo "Failed to parse fingerprint. Response: $JSON_BODY_FINGERPRINT"; exit 1;
-            fi
-            echo "Successfully fetched Cloudsmith Fingerprint: SHA256:${FINGERPRINT}"
-
-            # Add Cloudsmith repo. Name "my_cloudsmith_hex_repo" matches mix.exs dep config.
-            mix hex.repo add my_cloudsmith_hex_repo \
-              "https://hex.cloudsmith.io/${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}/" \
-              --auth-key "${CLOUDSMITH_API_KEY}" \
-              --fetch-public-key "SHA256:${FINGERPRINT}" \
-              --force # [1, 2]
-
-            echo "Current Hex repositories:"; mix hex.repo list
-            echo "Hex configuration:"; mix hex.config
-
-      # Use mix deps.get instead of elixir/install-deps as elixir orb is removed
-      - run:
-          name: "Install Elixir Dependencies"
-          command: mix deps.get
-
-      - run:
-          name: "Verify Hackney Dependency (if fetch succeeded)"
-          command: |
-            if mix hex.info hackney; then
-              echo "Hackney information retrieved successfully."
-            else
-              echo "Failed to get info for hackney. This might indicate it wasn't fetched."
-              # exit 1 # Optionally fail if hackney info isn't found
-            fi
-
-  create_and_publish_hex_package_job: # This new job creates and publishes the package
-    docker: # Changed from 'executor' to 'docker'
+  create_and_publish_hex_package_job: # This job creates and publishes the package
+    docker: # Corrected executor syntax as per image
       - image: cimg/elixir:1.14.0-node # Example Elixir image with Node.js for broader compatibility
     environment:
       MIX_ENV: prod # Typically publish with prod environment
@@ -84,78 +15,29 @@ jobs:
       # These must be set in CircleCI Project Environment Variables
     steps:
       - checkout
-      - cloudsmith/ensure-api-key # [1]
-      - cloudsmith/install-cli # Optional
-
       - run:
-          name: "Install JQ (for parsing API response for fingerprint)"
+          name: "Install Hex & Mix versions"
           command: |
-            if command -v apk &> /dev/null; then sudo apk add --no-cache jq;
-            elif command -v apt-get &> /dev/null; then sudo apt-get update && sudo apt-get install -y jq;
-            else echo "Cannot determine package manager to install jq. Ensure jq is available." && exit 1; fi
-      - run:
-          name: "Configure Hex for Publishing to Cloudsmith"
-          command: |
-            echo "Ensuring Hex and Rebar are installed/updated..."
-            mix local.hex --force # [1]
+            mix local.hex --force
             mix local.rebar --force
-
-            echo "Fetching Cloudsmith repository RSA key fingerprint..."
-            CLOUDSMITH_REPO_PATH="${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}"
-            FINGERPRINT_RESPONSE_WITH_CODE=$(curl -s -w "\\n%{http_code}" \
-              -H "X-Api-Key: ${CLOUDSMITH_API_KEY}" \
-              "https://api.cloudsmith.io/v1/repos/${CLOUDSMITH_REPO_PATH}/rsa/")
-            HTTP_CODE_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | tail -n1)
-            JSON_BODY_FINGERPRINT=$(echo "$FINGERPRINT_RESPONSE_WITH_CODE" | sed '$d')
-
-            if; then # Corrected if statement syntax
-              echo "Error fetching Cloudsmith RSA key. HTTP Status: $HTTP_CODE_FINGERPRINT"
-              echo "Response: $JSON_BODY_FINGERPRINT"
-              exit 1
-            fi
-            FINGERPRINT=$(echo "$JSON_BODY_FINGERPRINT" | jq -r '.ssh_fingerprint')
-            if ||; then # Corrected if statement syntax
-              echo "Failed to parse fingerprint. Response: $JSON_BODY_FINGERPRINT"; exit 1;
-            fi
-            echo "Successfully fetched Cloudsmith Fingerprint: SHA256:${FINGERPRINT}"
-
-            # Add Cloudsmith repo. Name "my_cloudsmith_hex_repo" will be used with --repo flag.
+      - run:
+          name: "Configure Cloudsmith Hex Mirror"
+          command: |
             mix hex.repo add my_cloudsmith_hex_repo \
               "https://hex.cloudsmith.io/${CLOUDSMITH_OWNER}/${CLOUDSMITH_HEX_REPO_SLUG}/" \
               --auth-key "${CLOUDSMITH_API_KEY}" \
               --fetch-public-key "SHA256:${FINGERPRINT}" \
-              --force # [1, 2]
-
-            echo "Current Hex repositories:"; mix hex.repo list
-            echo "Hex configuration:"; mix hex.config
-
+              --force
+            mix local.rebar --force # Duplicated as per image
       - run:
-          name: "Prepare and Build Hex Package"
-          command: |
-            # Get dependencies for the package itself (hackney in this case, as per mix.exs)
-            # This ensures hackney is available if it's needed during the build/packaging of hex_timeout_replicator
-            mix deps.get
-            # mix hex.build # Not strictly necessary as publish often includes build [1]
-
+          name: "Install Deps"
+          command: mix deps.get
       - run:
-          name: "Publish Hex Package to Cloudsmith"
-          command: |
-            # The --yes flag is crucial for CI to avoid interactive prompts.
-            # The --repo flag explicitly tells mix to publish to the named repository.
-            mix hex.publish package --yes --repo my_cloudsmith_hex_repo # [1]
-            echo "Package publish command executed. Check Cloudsmith UI for package version 0.1.0."
+          name: "Compile Project"
+          command: mix compile
 
 workflows:
-  replicate_fetch_and_publish_package_workflow:
+  version: 2 # Workflow version as per image
+  test: # Workflow name as per image
     jobs:
-      - replicate_hex_timeout_job
-      - create_and_publish_hex_package_job:
-          # This job will run after the replicate_hex_timeout_job successfully completes.
-          # Remove 'requires' if you want them to run in parallel (but ensure Cloudsmith setup is robust for that).
-          requires:
-            - replicate_hex_timeout_job
-          # Add filters for branches if you only want to publish from specific branches, e.g., main:
-          # filters:
-          #   branches:
-          #     only:
-          #       - main
+      - create_and_publish_hex_package_job
