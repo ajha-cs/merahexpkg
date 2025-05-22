@@ -24,8 +24,6 @@ jobs:
             mix local.hex --force
             mix local.rebar --force
 
-
-
             # Replace this with your actual SHA fingerprint
             # FINGERPRINT_TO_USE="tp+evxSZS0HnfF7VBSeaMErtJP2R4bleeiWW6QBJ+i4"
 
