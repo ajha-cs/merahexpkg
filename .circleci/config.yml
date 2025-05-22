@@ -2,7 +2,8 @@ version: 2.1
 
 orbs:
   cloudsmith: cloudsmith/cloudsmith@1.0.4
-  elixir: circleci/elixir@3.1.0
+  elixir: coletiv/elixir@dev:alpha
+
 
 jobs:
   replicate_hex_timeout_job: # This job focuses on replicating the fetch timeout
